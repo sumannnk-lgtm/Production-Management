@@ -1,0 +1,13 @@
+{
+  "name": "Aora Production",
+  "short_name": "Production",
+  "start_url": "Production Management.HTML",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [{
+    "src": "https://cdn-icons-png.flaticon.com/512/1541/1541415.png",
+    "sizes": "512x512",
+    "type": "image/png"
+  }]
+}

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Management System | Aora Health</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .tab-btn.active { border-bottom: 3px solid #2563eb; color: #2563eb; background: #f8fafc; }
+        /* Custom scrollbar for history */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8 min-h-screen font-sans">
+
+    <div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+        <div class="p-6 border-b bg-white flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800 tracking-tight">Production Management System</h1>
+                <p class="text-gray-500 text-sm">Aora Health | Spain Innovation</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="saveToGoogleSheets()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-100">
+                    <span>💾</span> Save Batch
+                </button>
+                <button onclick="exportToExcel()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-green-100">
+                    <span>📥</span> Export Daily Log
+                </button>
+            </div>
+        </div>
+
+        <div class="flex bg-gray-50 border-b">
+            <button onclick="openTab('BatchInfo')" class="tab-btn active flex-1 py-4 text-xs font-bold uppercase tracking-wider transition-all">Batch Info</button>
+            <button onclick="openTab('Production')" class="tab-btn flex-1 py-4 text-xs font-bold uppercase tracking-wider transition-all border-l border-r border-gray-200">Production</button>
+            <button onclick="openTab('Packaging')" class="tab-btn flex-1 py-4 text-xs font-bold uppercase tracking-wider transition-all border-r border-gray-200">Packaging</button>
+            <button onclick="openTab('Yield')" class="tab-btn flex-1 py-4 text-xs font-bold uppercase tracking-wider transition-all border-r border-gray-200">Yield Summary</button>
+            <button onclick="openTab('History'); getHistory();" class="tab-btn flex-1 py-4 text-xs font-bold uppercase tracking-wider transition-all">History</button>
+        </div>
+
+        <div id="BatchInfo" class="tab-content active p-8">
+            <div class="grid md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-xs font-black text-gray-400 uppercase mb-1">Production Date</label>
+                    <input type="date" id="logDate" class="w-full p-3 bg-gray-50 border rounded-xl outline-none mb-4" onchange="autoSave()">
+                </div>
+                <div>
+                    <label class="block text-xs font-black text-gray-400 uppercase mb-1">Batch ID / Lot Number</label>
+                    <input type="text" id="logBatch" placeholder="e.g. BATCH-2026-001" class="w-full p-3 bg-gray-50 border rounded-xl outline-none" oninput="autoSave()">
+                </div>
+            </div>
+        </div>
+
+        <div id="Production" class="tab-content p-8">
+            <div class="grid md:grid-cols-2 gap-10">
+                <div class="space-y-6">
+                    <h2 class="text-lg font-bold text-gray-700">Batch Configuration</h2>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Target Quantity (Capsules)</label>
+                        <input type="number" id="targetQty" value="200000" oninput="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Expected Waste %</label>
+                        <input type="number" id="wastePctInput" value="5" oninput="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Capsule Size Selection</label>
+                        <select id="prodCapSize" onchange="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none">
+                            <option value="0.5">Size 0 (500mg) - 2000/kg</option>
+                            <option value="0.8">Size 00 (800mg) - 1250/kg</option>
+                            <option value="1.35">Size 000 (1350mg) - 740/kg</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="bg-blue-600 rounded-2xl p-8 text-white flex flex-col justify-center shadow-lg space-y-4">
+                    <div>
+                        <p class="text-blue-100 text-xs font-bold uppercase">Total Powder Required</p>
+                        <p id="dispReqPowder" class="text-4xl font-black">0.00 kg</p>
+                    </div>
+                    <hr class="border-blue-400">
+                    <div>
+                        <p class="text-blue-100 text-xs font-bold uppercase">Total Shells Needed</p>
+                        <p id="dispReqShells" class="text-4xl font-black">0</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="Packaging" class="tab-content p-8">
+            <div class="grid md:grid-cols-2 gap-10">
+                <div class="space-y-6">
+                    <h2 class="text-lg font-bold text-gray-700">Packaging Logic</h2>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Number of Capsules</label>
+                        <input type="number" id="packCapsules" value="11880" oninput="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Machine Speed (Sec per 20 Caps)</label>
+                        <select id="blisterSpeed" onchange="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none">
+                            <option value="1.5">1.5 Seconds</option>
+                            <option value="2.0">2.0 Seconds</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="space-y-4">
+                    <div class="p-6 bg-green-50 rounded-2xl border border-green-100">
+                        <p class="text-green-800 text-xs font-bold uppercase mb-1 text-center">Total Escu Count / Boxes</p>
+                        <p class="text-3xl font-black text-green-700 text-center"><span id="dispEscu">594</span> / <span id="dispBoxes">9</span></p>
+                    </div>
+                    <div class="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                        <p class="text-orange-800 text-xs font-bold uppercase mb-1 text-center">Estimated Run Time</p>
+                        <p id="dispTime" class="text-3xl font-black text-orange-700 text-center">0.25 Hours</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="Yield" class="tab-content p-8">
+            <div class="grid md:grid-cols-2 gap-10">
+                <div class="space-y-6">
+                    <h2 class="text-lg font-bold text-gray-700">Actual Production</h2>
+                    <div>
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Actual Capsules Produced</label>
+                        <input type="number" id="yieldActual" value="179520" oninput="syncAll()" class="w-full p-3 bg-gray-50 border rounded-xl outline-none font-bold">
+                    </div>
+                    <div class="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+                        <span class="text-sm font-bold text-gray-700">Use Manual Theoretical Value</span>
+                        <input type="checkbox" id="manualToggle" onchange="toggleManual()" class="w-5 h-5 cursor-pointer accent-blue-600">
+                    </div>
+                    <div id="manualInputContainer" class="hidden">
+                        <label class="block text-xs font-black text-gray-400 uppercase mb-1">Manual Theoretical Value</label>
+                        <input type="number" id="manualTheoVal" value="270000" oninput="syncAll()" class="w-full p-3 bg-blue-50 border border-blue-200 rounded-xl outline-none text-blue-700 font-bold">
+                    </div>
+                    <div class="p-6 bg-red-50 rounded-2xl border border-red-100 text-center">
+                        <p class="text-red-800 text-xs font-black uppercase mb-2">Calculated Wastage %</p>
+                        <p id="dispWastePct" class="text-4xl font-black text-red-700">0.00%</p>
+                    </div>
+                    <div class="p-6 bg-purple-50 rounded-2xl border border-purple-100 text-center">
+                        <p class="text-purple-800 text-xs font-bold uppercase mb-2">Yield Percentage</p>
+                        <p id="dispYieldPct" class="text-4xl font-black text-purple-700">66.49%</p>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-2xl p-8 text-white shadow-lg space-y-5">
+                    <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-6">Production Summary</h3>
+                    <div class="flex justify-between border-b border-gray-700 pb-2">
+                        <span class="text-gray-400">Total Capsules Produced</span>
+                        <span id="sumProduced" class="font-bold text-green-400 text-lg">179,520</span>
+                    </div>
+                    <div class="flex justify-between border-b border-gray-700 pb-2">
+                        <span class="text-gray-400">Loss</span>
+                        <div class="text-right">
+                            <p id="sumLoss" class="font-bold text-red-400 text-lg">90,480</p>
+                            <p id="sumLossPct" class="text-xs text-red-500">33.51% loss</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center pt-2">
+                        <span class="text-gray-400">Production Efficiency</span>
+                        <span id="sumEfficiency" class="px-3 py-1 bg-gray-700 rounded-full text-xs font-black uppercase">Fair (66.49%)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="History" class="tab-content p-8">
+            <h2 class="text-lg font-bold text-gray-700 mb-4">Past Batch History</h2>
+            <div class="overflow-x-auto border rounded-xl custom-scroll" style="max-height: 400px;">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-50 text-gray-400 uppercase text-xs font-black sticky top-0">
+                        <tr>
+                            <th class="p-4 border-b">Date</th>
+                            <th class="p-4 border-b">Batch ID</th>
+                            <th class="p-4 border-b">Actual Produced</th>
+                            <th class="p-4 border-b">Yield %</th>
+                            <th class="p-4 border-b">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody" class="divide-y divide-gray-100">
+                        <tr>
+                            <td colspan="5" class="p-8 text-center text-gray-400 italic">Click "History" tab to refresh records...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIGURATION ---
+        // REPLACE THIS URL with your deployed Google Web App URL
+        const SCRIPT_URL ="https://script.google.com/macros/s/AKfycbxEQGPonBqgxyIY0mNSD0SeYIzjLt6P4c5zVvsIkr7HX158bOmcIhMK11rJo9qSCBOB/exec";
+
+        function openTab(name) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(name).classList.add('active');
+            if(event) event.currentTarget.classList.add('active');
+        }
+
+        function toggleManual() {
+            const container = document.getElementById('manualInputContainer');
+            container.classList.toggle('hidden', !document.getElementById('manualToggle').checked);
+            syncAll();
+        }
+
+        // --- 2. STORAGE & INTEGRATION LOGIC ---
+
+        function autoSave() {
+            const formData = {
+                date: document.getElementById('logDate').value,
+                batch: document.getElementById('logBatch').value,
+                target: document.getElementById('targetQty').value,
+                actual: document.getElementById('yieldActual').value
+            };
+            localStorage.setItem('aora_last_draft', JSON.stringify(formData));
+        }
+
+        async function saveToGoogleSheets() {
+            const btn = event.currentTarget;
+            btn.disabled = true;
+            btn.innerText = "Saving...";
+
+            const payload = {
+                date: document.getElementById('logDate').value,
+                batchId: document.getElementById('logBatch').value,
+                target: document.getElementById('targetQty').value,
+                actual: document.getElementById('yieldActual').value,
+                waste: document.getElementById('dispWastePct').innerText,
+                yield: document.getElementById('dispYieldPct').innerText,
+                status: document.getElementById('sumEfficiency').innerText
+            };
+
+            try {
+                // Sending data to Google Sheets via POST
+                await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Needed for Apps Script
+                    cache: 'no-cache',
+                    body: JSON.stringify(payload)
+                });
+                alert("Success: Batch data sent to Google Sheets!");
+            } catch (e) {
+                console.error("Save Error:", e);
+                alert("Error connecting to Google Sheets. Check SCRIPT_URL.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = "<span>💾</span> Save Batch";
+            }
+        }
+
+        async function getHistory() {
+            const tbody = document.getElementById('historyBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center animate-pulse">Fetching history from Google Sheets...</td></tr>';
+
+            try {
+                const response = await fetch(SCRIPT_URL);
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400">No records found.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.map(row => `
+                    <tr class="hover:bg-blue-50 transition-colors">
+                        <td class="p-4 font-medium">${row[0]}</td>
+                        <td class="p-4 text-gray-500 font-mono">${row[1]}</td>
+                        <td class="p-4 font-bold">${Number(row[3]).toLocaleString()}</td>
+                        <td class="p-4 text-purple-600 font-bold">${row[5]}</td>
+                        <td class="p-4"><span class="px-2 py-1 bg-gray-100 rounded-full text-[10px] font-black uppercase">${row[6]}</span></td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-red-500 italic">Error retrieving history. Ensure Web App is deployed as "Anyone".</td></tr>';
+            }
+        }
+
+        // --- 3. CORE LOGIC (CALCULATIONS) ---
+
+        function syncAll() {
+            const target = parseFloat(document.getElementById('targetQty').value) || 0;
+            const wastePlanning = (parseFloat(document.getElementById('wastePctInput').value) || 0) / 100;
+            const fillWeight = parseFloat(document.getElementById('prodCapSize').value) || 0.5;
+
+            const reqPowder = (target * (fillWeight / 1000)) / (1 - wastePlanning);
+            const reqShells = target / (1 - wastePlanning);
+
+            document.getElementById('dispReqPowder').innerText = reqPowder.toFixed(2) + " kg";
+            document.getElementById('dispReqShells').innerText = Math.ceil(reqShells).toLocaleString();
+
+            const packCaps = parseFloat(document.getElementById('packCapsules').value) || 0;
+            const speed = parseFloat(document.getElementById('blisterSpeed').value) || 1.5;
+            const boxes = packCaps / 1320; 
+            const escuTotal = boxes * 66;
+            const hours = ((packCaps / 20) * speed) / 3600;
+
+            document.getElementById('dispEscu').innerText = Math.round(escuTotal).toLocaleString();
+            document.getElementById('dispBoxes').innerText = Math.round(boxes).toLocaleString();
+            document.getElementById('dispTime').innerText = hours.toFixed(2) + " Hours";
+
+            const actual = parseFloat(document.getElementById('yieldActual').value) || 0;
+            const isManual = document.getElementById('manualToggle').checked;
+            const theoVal = isManual ? (parseFloat(document.getElementById('manualTheoVal').value) || 0) : target;
+
+            const actualWastePct = theoVal > 0 ? (1 - (actual / theoVal)) * 100 : 0;
+            const yieldPct = theoVal > 0 ? (actual / theoVal) * 100 : 0;
+            const lossCount = theoVal - actual;
+
+            document.getElementById('dispYieldPct').innerText = yieldPct.toFixed(2) + "%";
+            document.getElementById('dispWastePct').innerText = actualWastePct.toFixed(2) + "%";
+            document.getElementById('sumProduced').innerText = actual.toLocaleString();
+            document.getElementById('sumLoss').innerText = Math.max(0, lossCount).toLocaleString();
+            document.getElementById('sumLossPct').innerText = actualWastePct.toFixed(2) + "% loss";
+            
+            const effLabel = document.getElementById('sumEfficiency');
+            let status = yieldPct >= 95 ? "Excellent" : yieldPct >= 80 ? "Good" : "Fair";
+            effLabel.innerText = `${status} (${yieldPct.toFixed(2)}%)`;
+
+            autoSave(); // Save draft state on every change
+        }
+
+        function exportToExcel() {
+            const date = document.getElementById('logDate').value;
+            const batch = document.getElementById('logBatch').value;
+            const data = [
+                ["Production Daily Log - Aora Health"],
+                ["Date", date],
+                ["Batch ID", batch],
+                [],
+                ["Metric", "Value"],
+                ["Total Powder Required", document.getElementById('dispReqPowder').innerText],
+                ["Total Shells Needed", document.getElementById('dispReqShells').innerText],
+                ["Actual Produced", document.getElementById('sumProduced').innerText],
+                ["Actual Wastage %", document.getElementById('dispWastePct').innerText],
+                ["Yield Percentage", document.getElementById('dispYieldPct').innerText],
+                ["Overall Status", document.getElementById('sumEfficiency').innerText]
+            ];
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, "Report");
+            XLSX.writeFile(wb, `Aora_Production_Log_${batch}.xlsx`);
+        }
+
+        window.onload = () => {
+            // Load from LocalStorage if draft exists
+            const draft = JSON.parse(localStorage.getItem('aora_last_draft'));
+            if(draft) {
+                document.getElementById('logDate').value = draft.date;
+                document.getElementById('logBatch').value = draft.batch;
+                document.getElementById('targetQty').value = draft.target;
+                document.getElementById('yieldActual').value = draft.actual;
+            } else {
+                document.getElementById('logDate').valueAsDate = new Date();
+            }
+            syncAll();
+        };
+    </script>
+</body>
+</html>
